@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstddef>
 #include <random>
+#include <utility>
 
 #ifdef __x86_64__
 #include <immintrin.h>

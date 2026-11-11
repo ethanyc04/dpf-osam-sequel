@@ -1,30 +1,29 @@
 #include "dpf.h"
 #include "util.h"
 
-#include <cstdlib>
+#include <cstdint>
+#include <limits>
+#include <stdexcept>
 
 namespace dpf {
 
-namespace {
-
-int bit_at(int value, int shift) {
-  return (static_cast<std::uint32_t>(value) >> shift) & 1U;
-}
-
-int direction_at_level(int addr, std::size_t level, std::size_t lgn) {
-  return bit_at(addr, static_cast<int>(lgn - level - 1));
-}
-
-} // namespace
-
-word root_seed_share(prg& g, bool bit) {
+word root_seed_share(prg& g, bool root_bit) {
   word root = g();
-  root[0] = bit;
+  root[0] = root_bit;
   return root;
 }
 
 word eval(const key& k, int addr) {
+  if (k.size() == 0) {
+    throw std::invalid_argument("Cannot evaluate an empty DPF key");
+  }
   const auto lgn = k.size() - 1;
+  if (lgn > static_cast<std::size_t>(std::numeric_limits<int>::digits)) {
+    throw std::invalid_argument("DPF depth exceeds non-negative int address range");
+  }
+  if (addr < 0 || static_cast<std::uint64_t>(addr) >= (std::uint64_t{1} << lgn)) {
+    throw std::invalid_argument("DPF address outside domain");
+  }
 
   word seed = k[0];
 

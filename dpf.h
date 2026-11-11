@@ -76,7 +76,7 @@ inline std::array<word, 2> expand_node(
 
 struct key {
   std::vector<word> words;
-  word mask_share; // Not sure what this does. Used for derandomization?
+  word mask_share; // Share of the DPF's random output value, used for derandomization.
 
   key() = default;
   explicit key(std::size_t n) : words(n) { } // Size n yields DPF with domain size 2^(n-1)
@@ -88,9 +88,19 @@ struct key {
   const word& operator[](std::size_t i) const { return words[i]; }
 };
 
-word root_seed_share(prg& g, bool bit);
+inline int bit_at(int value, int shift) {
+  return (static_cast<std::uint32_t>(value) >> shift) & 1U;
+}
 
-word eval(const key&, int pos);
+inline int direction_at_level(int addr, std::size_t level, std::size_t lgn) {
+  return bit_at(addr, static_cast<int>(lgn - level - 1));
+}
+
+word root_seed_share(prg& g, bool root_bit);
+
+std::array<key, 2> generate_dealer(std::size_t lgn, int addr);
+
+word eval(const key&, int addr);
 
 } // namespace dpf
 
