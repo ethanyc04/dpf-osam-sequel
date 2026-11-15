@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <vector>
+#include <span>
 
 namespace dpf {
 
@@ -98,9 +99,34 @@ inline int direction_at_level(int addr, std::size_t level, std::size_t lgn) {
 
 word root_seed_share(prg& g, bool root_bit);
 
+// Expansion helpers that accumulate PRF calls locally for batched accounting.
+std::array<word, 2> expand_dpf_seed_uncorrected(word seed, std::size_t& prf_calls);
+std::array<word, 2> expand_dpf_seed(
+    word seed, word correction, bool has_correction, std::size_t& prf_calls);
+
 std::array<key, 2> generate_dealer(std::size_t lgn, int addr);
 
 word eval(const key&, int addr);
+
+// XOR the shifted, value-corrected output into an exactly domain-sized buffer.
+void full_shift_mask_into(
+    const key&,
+    int pos_diff,
+    word val_diff,
+    std::span<word>);
+
+using shift_mask_visitor = void (*)(std::size_t, word, void*);
+
+// Visits the shifted DPF output directly instead of materializing the whole
+// vector. With SAM_THREADS > 1, calls can arrive concurrently at disjoint
+// indices, so the visitor must not resize shared storage.
+// Visitors must not throw exceptions or reenter the parallel evaluator.
+void full_shift_mask_visit(
+    const key&,
+    int pos_diff,
+    word val_diff,
+    shift_mask_visitor,
+    void*);
 
 } // namespace dpf
 

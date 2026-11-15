@@ -8,24 +8,6 @@
 
 namespace dpf {
 
-std::array<word, 2> expand_dpf_seed_uncorrected(word seed, std::size_t& prf_calls) {
-  prf_calls += node_expansion_prf_calls;
-  return expand_node_uncorrected_uncounted(seed);
-}
-
-std::array<word, 2> expand_dpf_seed(
-    word seed,
-    word correction,
-    bool has_correction,
-    std::size_t& prf_calls) {
-  auto next = expand_dpf_seed_uncorrected(seed, prf_calls);
-  if (has_correction && seed[0]) {
-    next[0] ^= correction;
-    next[1] ^= correction;
-  }
-  return next;
-}
-
 std::array<key, 2> generate_dealer(std::size_t lgn, int addr) {
   if (lgn > static_cast<std::size_t>(std::numeric_limits<int>::digits)) {
     throw std::invalid_argument("DPF depth exceeds non-negative int address range");
