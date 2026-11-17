@@ -6,12 +6,16 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <stdexcept>
 #include <vector>
 #include <span>
 
 namespace dpf {
 
 using ::word;
+
+namespace detail {
 
 inline constexpr std::size_t node_expansion_prf_calls = 2;
 
@@ -75,6 +79,28 @@ inline std::array<word, 2> expand_node(
   return next;
 }
 
+inline int bit_at(int value, int shift) {
+  return (static_cast<std::uint32_t>(value) >> shift) & 1U;
+}
+
+inline int direction_at_level(int addr, std::size_t level, std::size_t lgn) {
+  return bit_at(addr, static_cast<int>(lgn - level - 1));
+}
+
+word root_seed_share(prg& g, bool root_bit);
+
+// Validate the depth before constructing a domain size or shifting an address.
+std::uint64_t domain_size(std::size_t lgn);
+void validate_address(int addr, std::uint64_t domain);
+std::size_t worker_threads();
+
+// Expansion helpers that accumulate PRF calls locally for batched accounting.
+std::array<word, 2> expand_seed_uncorrected(word seed, std::size_t& prf_calls);
+std::array<word, 2> expand_seed(
+    word seed, word correction, bool has_correction, std::size_t& prf_calls);
+
+} // namespace detail
+
 struct key {
   std::vector<word> words;
   word mask_share; // Share of the DPF's random output value, used for derandomization.
@@ -89,22 +115,11 @@ struct key {
   const word& operator[](std::size_t i) const { return words[i]; }
 };
 
-inline int bit_at(int value, int shift) {
-  return (static_cast<std::uint32_t>(value) >> shift) & 1U;
-}
-
-inline int direction_at_level(int addr, std::size_t level, std::size_t lgn) {
-  return bit_at(addr, static_cast<int>(lgn - level - 1));
-}
-
-word root_seed_share(prg& g, bool root_bit);
-
-// Expansion helpers that accumulate PRF calls locally for batched accounting.
-std::array<word, 2> expand_dpf_seed_uncorrected(word seed, std::size_t& prf_calls);
-std::array<word, 2> expand_dpf_seed(
-    word seed, word correction, bool has_correction, std::size_t& prf_calls);
-
 std::array<key, 2> generate_dealer(std::size_t lgn, int addr);
+
+// Uses up to SAM_THREADS workers; repeated addresses get fresh key pairs.
+std::array<std::vector<key>, 2> generate_dealer_batch(
+    std::size_t lgn, const std::vector<int>& addresses);
 
 word eval(const key&, int addr);
 

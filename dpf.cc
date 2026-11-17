@@ -13,27 +13,47 @@
 
 namespace dpf {
 
-std::array<word, 2> expand_dpf_seed_uncorrected(
+namespace detail {
+
+std::uint64_t domain_size(std::size_t lgn) {
+  if (lgn > static_cast<std::size_t>(std::numeric_limits<int>::digits)
+      || lgn >= std::numeric_limits<std::uint64_t>::digits) {
+    throw std::invalid_argument("DPF depth exceeds non-negative int address range");
+  }
+  return std::uint64_t{1} << lgn;
+}
+
+void validate_address(int addr, std::uint64_t domain) {
+  if (addr < 0 || static_cast<std::uint64_t>(addr) >= domain) {
+    throw std::invalid_argument("DPF address outside domain");
+  }
+}
+
+word root_seed_share(prg& g, bool root_bit) {
+  word root = g();
+  root[0] = root_bit;
+  return root;
+}
+
+std::array<word, 2> expand_seed_uncorrected(
     word seed,
     std::size_t& prf_calls) {
   prf_calls += node_expansion_prf_calls;
   return expand_node_uncorrected_uncounted(seed);
 }
 
-std::array<word, 2> expand_dpf_seed(
+std::array<word, 2> expand_seed(
     word seed,
     word correction,
     bool has_correction,
     std::size_t& prf_calls) {
-  auto next = expand_dpf_seed_uncorrected(seed, prf_calls);
+  auto next = expand_seed_uncorrected(seed, prf_calls);
   if (has_correction && seed[0]) {
     next[0] ^= correction;
     next[1] ^= correction;
   }
   return next;
 }
-
-namespace {
 
 std::size_t worker_threads() {
   const char* env = std::getenv("SAM_THREADS");
@@ -46,6 +66,10 @@ std::size_t worker_threads() {
 
   return 1;
 }
+
+} // namespace detail
+
+namespace {
 
 struct shift_task {
   int lgn;
@@ -82,13 +106,13 @@ void full_shift_mask_rec(
     return;
   }
 
-  auto next = expand_dpf_seed(
+  auto next = detail::expand_seed(
       seed,
       corrections[0],
       true,
       prf_calls);
 
-  const int dir = bit_at(addr_diff, lgn - 1);
+  const int dir = detail::bit_at(addr_diff, lgn - 1);
   if (dir) {
     std::swap(next[0], next[1]);
   }
@@ -145,13 +169,13 @@ void make_shift_tasks(
     return;
   }
 
-  auto next = expand_dpf_seed(
+  auto next = detail::expand_seed(
       seed,
       corrections[0],
       true,
       prf_calls);
 
-  const int dir = bit_at(addr_diff, lgn - 1);
+  const int dir = detail::bit_at(addr_diff, lgn - 1);
   if (dir) {
     std::swap(next[0], next[1]);
   }
@@ -304,7 +328,7 @@ private:
 };
 
 worker_pool& eval_worker_pool() {
-  static worker_pool pool(worker_threads());
+  static worker_pool pool(detail::worker_threads());
   return pool;
 }
 
@@ -319,21 +343,19 @@ void run_full_shift_mask(
     throw std::invalid_argument("Cannot evaluate an empty DPF key");
   }
   const auto depth = k.size() - 1;
-  if (depth > static_cast<std::size_t>(std::numeric_limits<int>::digits)
-      || depth >= std::numeric_limits<std::size_t>::digits) {
+  const auto domain = detail::domain_size(depth);
+  if (depth >= std::numeric_limits<std::size_t>::digits) {
     throw std::invalid_argument("DPF depth exceeds supported address range");
   }
   const auto lgn = static_cast<int>(depth);
-  const auto leaves = std::size_t{1} << lgn;
-  if (addr_diff < 0 || static_cast<std::size_t>(addr_diff) >= leaves) {
-    throw std::invalid_argument("DPF address shift outside domain");
-  }
+  const auto leaves = static_cast<std::size_t>(domain);
+  detail::validate_address(addr_diff, domain);
   if (visit == nullptr && buf.size() != leaves) {
     throw std::invalid_argument("DPF shift output span size mismatch");
   }
 
   std::span<const word> corrections(k.data(), k.size());
-  const std::size_t task_count = std::min(worker_threads(), leaves);
+  const std::size_t task_count = std::min(detail::worker_threads(), leaves);
 
   if (task_count < 2) {
     std::size_t prf_calls = 0;
@@ -379,29 +401,19 @@ void run_full_shift_mask(
 
 } // namespace
 
-word root_seed_share(prg& g, bool root_bit) {
-  word root = g();
-  root[0] = root_bit;
-  return root;
-}
-
 word eval(const key& k, int addr) {
   if (k.size() == 0) {
     throw std::invalid_argument("Cannot evaluate an empty DPF key");
   }
   const auto lgn = k.size() - 1;
-  if (lgn > static_cast<std::size_t>(std::numeric_limits<int>::digits)) {
-    throw std::invalid_argument("DPF depth exceeds non-negative int address range");
-  }
-  if (addr < 0 || static_cast<std::uint64_t>(addr) >= (std::uint64_t{1} << lgn)) {
-    throw std::invalid_argument("DPF address outside domain");
-  }
+  const auto domain = detail::domain_size(lgn);
+  detail::validate_address(addr, domain);
 
   word seed = k[0];
 
   for (std::size_t i = 0; i < lgn; ++i) {
-    const auto next = expand_node(seed, k[i + 1], true);
-    const int dir = direction_at_level(addr, i, lgn);
+    const auto next = detail::expand_node(seed, k[i + 1], true);
+    const int dir = detail::direction_at_level(addr, i, lgn);
     seed = next[dir];
   }
 
