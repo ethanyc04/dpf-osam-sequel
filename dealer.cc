@@ -7,6 +7,27 @@
 #include <numeric>
 #include <utility>
 
+namespace {
+
+std::array<std::vector<int>, 2> sample_permutation_shares(int n) {
+  // Fisher-Yates with unbiased bounded draws, then fresh shares of each entry.
+  std::array<std::vector<int>, 2> out;
+  std::vector<int> permutation(n);
+  std::iota(permutation.begin(), permutation.end(), 0);
+  prg g;
+  for (int remaining = n; remaining > 1; --remaining) {
+    std::swap(permutation[remaining - 1], permutation[g.draw_int(remaining)]);
+  }
+  for (int i = 0; i < n; ++i) {
+    const int first_share = g.draw_int(n);
+    out[0].push_back(first_share);
+    out[1].push_back(permutation[i] ^ first_share);
+  }
+  return out;
+}
+
+} // namespace
+
 namespace dpf_corr {
 
 std::array<correlation, 2> preprocess_dealer(std::size_t lgn) {
@@ -44,18 +65,9 @@ std::array<resources, 2> preprocess_dealer(int capacity, int max_writes, int val
     r.write_corrs.reserve(max_writes);
   }
 
-  // Fisher-Yates with unbiased bounded draws, then fresh shares of each entry.
-  auto& permutation = out[0].pi;
-  std::iota(permutation.begin(), permutation.end(), 0);
-  prg g;
-  for (int remaining = capacity; remaining > 1; --remaining) {
-    std::swap(permutation[remaining - 1], permutation[g.draw_int(remaining)]);
-  }
-  for (int i = 0; i < capacity; ++i) {
-    const int first_share = g.draw_int(capacity);
-    out[1].pi[i] = permutation[i] ^ first_share;
-    permutation[i] = first_share;
-  }
+  auto shares = sample_permutation_shares(capacity);
+  out[0].pi = std::move(shares[0]);
+  out[1].pi = std::move(shares[1]);
 
   const auto depth = static_cast<std::size_t>(lg(capacity));
   for (int i = 0; i < max_writes; ++i) {
@@ -88,18 +100,9 @@ std::array<resources, 2> preprocess_dealer(
     r.dpf_corrs.reserve(max_dpf_corrs);
   }
 
-  // Fisher-Yates with unbiased bounded draws, then fresh shares of each entry.
-  auto& permutation = out[0].pi;
-  std::iota(permutation.begin(), permutation.end(), 0);
-  prg g;
-  for (int remaining = capacity; remaining > 1; --remaining) {
-    std::swap(permutation[remaining - 1], permutation[g.draw_int(remaining)]);
-  }
-  for (int i = 0; i < capacity; ++i) {
-    const int first_share = g.draw_int(capacity);
-    out[1].pi[i] = permutation[i] ^ first_share;
-    permutation[i] = first_share;
-  }
+  auto shares = sample_permutation_shares(capacity);
+  out[0].pi = std::move(shares[0]);
+  out[1].pi = std::move(shares[1]);
 
   const auto depth = static_cast<std::size_t>(lg(capacity));
   for (int i = 0; i < max_dpf_corrs; ++i) {
