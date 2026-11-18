@@ -1,5 +1,6 @@
 #include "preprocessing.h"
 #include "full_eval_sam.h"
+#include "reactive_sam.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -66,3 +67,47 @@ std::array<resources, 2> preprocess_dealer(int capacity, int max_writes, int val
 }
 
 } // namespace sam::full_eval
+
+namespace sam::reactive {
+
+std::array<resources, 2> preprocess_dealer(
+    int capacity, int max_dpf_corrs, int value_bits) {
+  if (!is_power_of_two(capacity)) {
+    throw std::invalid_argument("SAM capacity must be a positive power of two");
+  }
+  if (max_dpf_corrs < 0) {
+    throw std::invalid_argument("DPF correlation budget must be non-negative");
+  }
+  check_value_bits(value_bits);
+
+  std::array<resources, 2> out;
+  for (auto& r : out) {
+    r.storage_size = capacity;
+    r.value_bits = value_bits;
+    r.pi.resize(capacity);
+    r.dpf_corrs.reserve(max_dpf_corrs);
+  }
+
+  // Fisher-Yates with unbiased bounded draws, then fresh shares of each entry.
+  auto& permutation = out[0].pi;
+  std::iota(permutation.begin(), permutation.end(), 0);
+  prg g;
+  for (int remaining = capacity; remaining > 1; --remaining) {
+    std::swap(permutation[remaining - 1], permutation[g.draw_int(remaining)]);
+  }
+  for (int i = 0; i < capacity; ++i) {
+    const int first_share = g.draw_int(capacity);
+    out[1].pi[i] = permutation[i] ^ first_share;
+    permutation[i] = first_share;
+  }
+
+  const auto depth = static_cast<std::size_t>(lg(capacity));
+  for (int i = 0; i < max_dpf_corrs; ++i) {
+    auto correlations = dpf_corr::preprocess_dealer(depth);
+    out[0].dpf_corrs.push_back(std::move(correlations[0]));
+    out[1].dpf_corrs.push_back(std::move(correlations[1]));
+  }
+  return out;
+}
+
+} // namespace sam::reactive  
