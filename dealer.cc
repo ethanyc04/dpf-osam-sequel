@@ -1,6 +1,7 @@
 #include "preprocessing.h"
 #include "full_eval_sam.h"
 #include "reactive_sam.h"
+#include "dealer_shuffle.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -114,3 +115,40 @@ std::array<resources, 2> preprocess_dealer(
 }
 
 } // namespace sam::reactive  
+
+namespace dealer_shuffle {
+
+std::pair<p0_state, p1_state> preprocess_dealer(
+    std::size_t slot_count, std::size_t slot_bits) {
+  if (slot_bits == 0) {
+    throw std::invalid_argument("Shuffle slot width must be positive");
+  }
+  if (slot_count > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    throw std::invalid_argument("Shuffle slot count exceeds supported permutation range");
+  }
+  const std::size_t words_per_slot = slot_bits / word_bits + (slot_bits % word_bits != 0);
+  p0_state p0;
+  p1_state p1;
+  if (slot_count > p0.s.max_size() / words_per_slot) {
+    throw std::length_error("Shuffle mask size exceeds supported vector size");
+  }
+  if (slot_count != 0) {
+    prg g;
+    p0.seed = g();
+    p1.seed = g();
+  }
+  prepare_p0(p0, slot_count, slot_bits);
+  prepare_p1(p1, slot_count, slot_bits);
+
+  auto r1 = permute(p0.pi0, p1.r, words_per_slot);
+  for (std::size_t i = 0; i < r1.size(); ++i) {
+    r1[i] ^= p0.s[i];
+  }
+  p0.r2 = permute(p1.pi1, r1, words_per_slot);
+  for (std::size_t i = 0; i < p0.r2.size(); ++i) {
+    p0.r2[i] ^= p1.t[i];
+  }
+  return {std::move(p0), std::move(p1)};
+}
+
+} // namespace dealer_shuffle
